@@ -112,11 +112,18 @@ const UploadAudioScreen = ({ navigation }) => {
 
   const loadUserData = async () => {
     try {
+      const ip = await AsyncStorage.getItem('MyIpAddress');
       const id = await AsyncStorage.getItem('user_id');
       const plan = await AsyncStorage.getItem('plan');
-      const ip = await AsyncStorage.getItem('MyIpAddress');
+
       const name = await AsyncStorage.getItem('full_name');
       const email = await AsyncStorage.getItem('email');
+
+      console.log(id);
+      console.log(plan);
+      console.log(ip);
+      console.log(name);
+      console.log(email);
 
       setUserId(id);
       setUserPlan(plan);
@@ -379,6 +386,17 @@ const UploadAudioScreen = ({ navigation }) => {
       .toString()
       .padStart(2, '0')}`;
   };
+  const handleLogout = async () => {
+    try {
+      // Clear all stored data
+      await AsyncStorage.clear();
+      // Navigate to login screen
+      navigation.navigate('LoginScreen');
+    } catch (error) {
+      console.error('Logout error:', error);
+      Alert.alert('Error', 'Failed to logout. Please try again.');
+    }
+  };
 
   return (
     <SafeAreaView style={styles.container}>
@@ -599,14 +617,19 @@ const UploadAudioScreen = ({ navigation }) => {
               <Text style={{ color: 'grey' }}> {email}</Text>
             </View>
             <View style={styles.profileDivider} />
-            <TouchableOpacity style={styles.profileItem}>
-              <Text style={styles.profileItemText}>Profile</Text>
+            <TouchableOpacity
+              style={styles.settingsButton}
+              onPress={() => navigation.navigate('SettingsScreen')}
+            >
+              <Icon name="cog" size={24} color="#fff" />
+              <Text style={styles.settingsButtonText}>Settings</Text>
             </TouchableOpacity>
-            <View style={styles.settingsRow}>
-              <Text style={styles.settingsText}>Light Mode</Text>
-              <Icon name="weather-sunny" size={24} color="#FFD600" />
-            </View>
-            <TouchableOpacity style={styles.logoutButton}>
+
+            {/* UPDATED: Logout button */}
+            <TouchableOpacity
+              style={styles.logoutButton}
+              onPress={handleLogout}
+            >
               <Text style={styles.logoutText}>Logout</Text>
               <Icon name="logout" size={20} color="#FF6B6B" />
             </TouchableOpacity>
@@ -626,6 +649,16 @@ const styles = StyleSheet.create({
     padding: 20,
     paddingBottom: 100,
   },
+  // NEW: Settings button style
+  settingsButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 15,
+    paddingHorizontal: 20,
+    borderRadius: 10,
+    backgroundColor: '#2a2a2a',
+    marginTop: 10,
+  },
   headerBackground: {
     height: 200,
     borderRadius: 20,
@@ -640,6 +673,11 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(0,0,0,0.4)',
     padding: 20,
     justifyContent: 'space-between',
+  },
+  settingsButtonText: {
+    color: '#fff',
+    fontSize: 18,
+    marginLeft: 15,
   },
   headerTopRow: {
     flexDirection: 'row',

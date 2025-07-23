@@ -15,6 +15,8 @@ const App = () => {
       try {
         // ← Use the same key for getItem and setItem
         let storedIp = await AsyncStorage.getItem('MyIpAddress');
+        console.log('STOREDDDDDDDDDD IPPPPPP', storedIp);
+
         if (!storedIp) {
           await AsyncStorage.setItem('MyIpAddress', DEFAULT_IP);
           storedIp = DEFAULT_IP;

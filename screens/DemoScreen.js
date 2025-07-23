@@ -6,21 +6,22 @@ import {
   StyleSheet,
   TouchableOpacity,
   Animated,
-  Image,
-  Alert,
   Dimensions,
   ImageBackground,
   SafeAreaView,
   Modal,
+  Alert,
 } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import axios from 'axios';
 import Icon from 'react-native-vector-icons/MaterialCommunityIcons';
+import { useFocusEffect } from '@react-navigation/native';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 const START_SECONDS = 20;
 
-const DemoScreen = ({ navigation }) => {
+export default function DemoScreen({ navigation }) {
+  const prevNurbitRef = useRef(0);
   // Profile Drawer state
   const [showProfile, setShowProfile] = useState(false);
   const slideAnim = useRef(new Animated.Value(-SCREEN_WIDTH)).current;
@@ -28,58 +29,189 @@ const DemoScreen = ({ navigation }) => {
 
   // User & Stats state
   const [userId, setUserId] = useState(null);
-  const [fullName, setFullName] = useState(''); // NEW: User's full name
+  const [fullName, setFullName] = useState('');
   const [email, setEmail] = useState('');
   const [khutbahCount, setKhutbahCount] = useState(0);
   const [reflectionsCount, setReflectionsCount] = useState(0);
   const [weeklyProgress, setWeeklyProgress] = useState(0);
-  const [weeklyBest, setWeeklyBest] = useState(0);
-  const [currentGoal, setCurrentGoal] = useState(0);
+  const [weeklyBest, setWeeklyBest] = useState(0); // NEW
+  const [currentGoal, setCurrentGoal] = useState(1);
   const [nurbitCount, setNurbitCount] = useState(0);
+  const [completedSummaries, setCompletedSummaries] = useState([]);
+  const [lastGoalSet, setLastGoalSet] = useState('');
+  const [reflectionList, setReflectionList] = useState([]);
+
+  // Timer & animations
+  const [seconds, setSeconds] = useState(START_SECONDS);
+  const [running, setRunning] = useState(false);
+  const gaugeAnim = useRef(new Animated.Value(0)).current;
+  const starAnim = useRef(new Animated.Value(1)).current;
 
   // Reflection modal & summary state
   const [showSummaryModal, setShowSummaryModal] = useState(false);
   const [currentSummary, setCurrentSummary] = useState('');
   const [canMarkRead, setCanMarkRead] = useState(false);
   const [isPlaceholderSummary, setIsPlaceholderSummary] = useState(false);
+  const [goalReached, setGoalReached] = useState(false);
+  const [currentSummaryId, setCurrentSummaryId] = useState('');
 
-  // Timer & animations
-  const [seconds, setSeconds] = useState(START_SECONDS);
-  const [running, setRunning] = useState(false);
-  const gaugeAnim = useRef(new Animated.Value(1)).current;
-  const starAnim = useRef(new Animated.Value(1)).current;
+  // Fetch and hydrate on focus
+  useFocusEffect(
+    React.useCallback(() => {
+      (async () => {
+        try {
+          const id = await AsyncStorage.getItem('user_id');
+          const name = await AsyncStorage.getItem('full_name');
+          const emailAddr = await AsyncStorage.getItem('email');
 
-  // Load initial data
+          // Hydrate cached stats
+          const keys = [
+            'weekly_progress',
+            'nurbit_count',
+            'current_goal',
+            'weekly_best',
+            'completed_summaries',
+            'last_goal_set',
+          ];
+
+          const values = await AsyncStorage.multiGet(keys);
+
+          const getValue = key => values.find(([k]) => k === key)?.[1];
+
+          const wp = getValue('weekly_progress');
+          const nc = getValue('nurbit_count');
+          const cg = getValue('current_goal');
+          const wb = getValue('weekly_best');
+          const completed = getValue('completed_summaries');
+          const lastSet = getValue('last_goal_set');
+
+          if (wp) setWeeklyProgress(+wp);
+          if (nc) setNurbitCount(+nc);
+          if (cg) setCurrentGoal(+cg);
+
+          if (wb != null) setWeeklyBest(+wb); // Safe check
+          setCompletedSummaries(completed ? JSON.parse(completed) : []);
+          setLastGoalSet(lastSet || '');
+
+          setUserId(id);
+          setFullName(name || 'User');
+          setEmail(emailAddr || '');
+
+          if (!id) return;
+
+          // 1️⃣ Fetch khutbah count
+          const { data: khutData } = await axios.get(
+            `${global.MyIpAddress}/get-khutbahs`,
+            { params: { user_id: id } },
+          );
+
+          setKhutbahCount(khutData.khutbahs.length);
+
+          // 2️⃣ Fetch user stats
+          const { data: stats } = await axios.get(
+            `${global.MyIpAddress}/user-stats`,
+            { params: { user_id: id } },
+          );
+          setGoalReached(stats.goal_reached);
+
+          // 3️⃣ Fetch reflections count
+          const { data: reflectionStats } = await axios.get(
+            `${global.MyIpAddress}/get-reflections`,
+            { params: { user_id: id } },
+          );
+
+          console.log(
+            'TOTAL REFLECTIONNNNNNN',
+            reflectionStats.reflections_count,
+          );
+          setReflectionsCount(reflectionStats.reflections_count);
+
+          const {
+            weekly_progress,
+            weekly_best,
+            nurbits,
+            current_goal,
+            completed: srvCompleted,
+            last_goal_set,
+          } = stats;
+
+          setWeeklyProgress(weekly_progress);
+          if (weekly_best != null) setWeeklyBest(weekly_best); // Safe set
+          setNurbitCount(nurbits);
+          setCurrentGoal(current_goal);
+          setCompletedSummaries(srvCompleted);
+          setLastGoalSet(last_goal_set || '');
+
+          // Prepare multiSet safely
+          const kvs = [
+            ['weekly_progress', weekly_progress.toString()],
+            ['nurbit_count', nurbits.toString()],
+            ['current_goal', current_goal.toString()],
+            ['completed_summaries', JSON.stringify(srvCompleted)],
+            ['last_goal_set', last_goal_set || ''],
+          ];
+
+          if (weekly_best != null) {
+            kvs.push(['weekly_best', weekly_best.toString()]);
+          }
+
+          await AsyncStorage.multiSet(kvs);
+
+          // Animate gauge
+          Animated.timing(gaugeAnim, {
+            toValue: Math.min(weekly_progress / current_goal, 1),
+            duration: 400,
+            useNativeDriver: false,
+          }).start();
+        } catch (err) {
+          console.error('Error fetching data:', err);
+        }
+      })();
+    }, []),
+  );
+
+  // Star pulse animation
   useEffect(() => {
-    (async () => {
-      const id = await AsyncStorage.getItem('user_id');
-      const name = await AsyncStorage.getItem('full_name');
-      const email = await AsyncStorage.getItem('email');
-      // NEW: Get full name
-      setUserId(id);
-      setEmail(email);
-      setFullName(name || 'User'); // NEW: Set full name or default
-      if (!id) return;
+    Animated.loop(
+      Animated.sequence([
+        Animated.timing(starAnim, {
+          toValue: 1.2,
+          duration: 800,
+          useNativeDriver: true,
+        }),
+        Animated.timing(starAnim, {
+          toValue: 1,
+          duration: 800,
+          useNativeDriver: true,
+        }),
+      ]),
+    ).start();
+  }, [starAnim]);
 
-      try {
-        const { data } = await axios.get(`${global.MyIpAddress}/get-khutbahs`, {
-          params: { user_id: id },
+  // Reflection countdown
+  useEffect(() => {
+    let interval;
+    if (running && seconds > 0) {
+      interval = setInterval(() => {
+        setSeconds(s => {
+          const next = s - 1;
+          gaugeAnim.setValue(next / START_SECONDS);
+          return next;
         });
-        setKhutbahCount(data.khutbahs.length);
-      } catch (err) {
-        console.error('Error fetching khutbahs:', err);
-      }
+      }, 1000);
+    } else if (running && seconds === 0) {
+      setRunning(false);
+      setShowSummaryModal(true);
+      setCanMarkRead(true);
+    }
+    return () => clearInterval(interval);
+  }, [gaugeAnim]);
 
-      // …other stats fetches
-    })();
-  }, []);
-
+  // NEW: Logout function
   // NEW: Logout function
   const handleLogout = async () => {
     try {
-      // Clear all stored data
       await AsyncStorage.clear();
-      // Navigate to login screen
       navigation.navigate('LoginScreen');
     } catch (error) {
       console.error('Logout error:', error);
@@ -118,24 +250,6 @@ const DemoScreen = ({ navigation }) => {
       ]).start();
     }
   };
-
-  // Star pulse animation
-  useEffect(() => {
-    Animated.loop(
-      Animated.sequence([
-        Animated.timing(starAnim, {
-          toValue: 1.2,
-          duration: 800,
-          useNativeDriver: true,
-        }),
-        Animated.timing(starAnim, {
-          toValue: 1,
-          duration: 800,
-          useNativeDriver: true,
-        }),
-      ]),
-    ).start();
-  }, [starAnim]);
 
   // Countdown and gauge animation
   useEffect(() => {
@@ -180,11 +294,14 @@ const DemoScreen = ({ navigation }) => {
       const response = await axios.post(reflectURL, { user_id: userId });
       const data = response.data;
 
+      setGoalReached(data.goal_reached);
       console.log('✅ Reflection data received:', data);
+      console.log('GOAL REACHEDDDDDDDDDDDDDDD', data.goal_reached);
 
       // Handle placeholder response from backend
       if (data.placeholder) {
         setCurrentSummary(data.summary);
+        setCurrentSummaryId(data.summary_id || '');
         setShowSummaryModal(true);
         setIsPlaceholderSummary(true);
         setCanMarkRead(false);
@@ -193,6 +310,7 @@ const DemoScreen = ({ navigation }) => {
 
       if (data?.summary && data?.timer) {
         setCurrentSummary(data.summary);
+        setCurrentSummaryId(data.summary_id); // ✅ make sure this is set!
         setSeconds(data.timer);
         gaugeAnim.setValue(1);
         setRunning(true);
@@ -235,12 +353,65 @@ const DemoScreen = ({ navigation }) => {
     }
   };
 
-  // Mark as read: reward additional points
-  const markAsRead = () => {
-    setNurbitCount(prev => prev + 20);
-    setReflectionsCount(prev => prev + 1);
+  const animateStar = () => {
+    Animated.sequence([
+      Animated.timing(starAnim, {
+        toValue: 1.5, // Bigger size
+        duration: 300,
+        useNativeDriver: true,
+      }),
+      Animated.timing(starAnim, {
+        toValue: 1,
+        duration: 300,
+        useNativeDriver: true,
+      }),
+    ]).start();
+  };
+
+  const markAsRead = async () => {
+    const updated = [...completedSummaries, currentSummary];
+    setCompletedSummaries(updated);
+
     setShowSummaryModal(false);
     setCanMarkRead(false);
+    await AsyncStorage.setItem('completed_summaries', JSON.stringify(updated));
+
+    try {
+      console.log('📤 Sending reflection to backend:', {
+        user_id: userId,
+        summary_id: currentSummaryId,
+        reflection: currentSummary,
+      });
+
+      const res = await axios.post(`${global.MyIpAddress}/save-reflection`, {
+        user_id: userId,
+        summary_id: currentSummaryId,
+        reflection: currentSummary,
+      });
+
+      const data = res.data;
+
+      setWeeklyProgress(data.weekly_progress);
+      setCurrentGoal(data.goal);
+      setNurbitCount(data.nurbits);
+      setReflectionsCount(data.total_reflection); // ✅ Correct way
+
+      console.log('🎯 Progress:', data.weekly_progress, '/', data.goal);
+
+      const prevNurbit = prevNurbitRef.current;
+      const newNurbit = data.nurbits;
+
+      if (newNurbit > prevNurbit) {
+        console.log('🎉 User gained Nurbits!');
+        animateStar(); // ✅ call animation
+      }
+
+      prevNurbitRef.current = newNurbit;
+      setNurbitCount(newNurbit);
+    } catch (error) {
+      console.error('❌ Failed to save reflection:', error);
+      console.log('🔎 Error response:', error?.response?.data);
+    }
   };
 
   // Close the summary modal
@@ -265,7 +436,9 @@ const DemoScreen = ({ navigation }) => {
               <TouchableOpacity onPress={toggleProfile}>
                 <Icon name="account-eye-outline" size={30} color="#fff" />
               </TouchableOpacity>
-              <TouchableOpacity>
+              <TouchableOpacity
+                onPress={() => navigation.navigate('SettingsScreen')}
+              >
                 <Icon name="cog-outline" size={28} color="#fff" />
               </TouchableOpacity>
             </View>
@@ -316,12 +489,12 @@ const DemoScreen = ({ navigation }) => {
         {/* Weekly Progress Card */}
         <View style={styles.progressCard}>
           <Text style={styles.progressTitle}>Weekly Progress</Text>
+
           <View style={styles.progressPill}>
             <Icon name="heart" size={16} color="#00C853" />
-            <Text style={styles.progressPillText}>
-              +{weeklyProgress * 10} Nurbits
-            </Text>
+            <Text style={styles.progressPillText}>Nurbits : {nurbitCount}</Text>
           </View>
+
           <View style={styles.gaugeContainer}>
             <View style={styles.gaugeBackground} />
             <Animated.View
@@ -339,13 +512,12 @@ const DemoScreen = ({ navigation }) => {
               <Text style={styles.gaugeText}>
                 {running ? `${seconds}s` : `${START_SECONDS}s`}
               </Text>
-              <Text style={styles.reflectionsLeft}>{`${
-                currentGoal - weeklyProgress
-              } reflections left`}</Text>
+              <Text style={styles.reflectionsLeft}>
+                {Math.max(currentGoal - weeklyProgress, 0)} Reflections Left
+              </Text>
             </View>
           </View>
 
-          {/* Reflection button with disabled state */}
           <TouchableOpacity
             style={[
               styles.reflectionButton,
@@ -362,6 +534,14 @@ const DemoScreen = ({ navigation }) => {
                 : 'Start Reflection →'}
             </Text>
           </TouchableOpacity>
+          {/* 🎉 Success Message */}
+          {goalReached && (
+            <View style={styles.goalMessageContainer}>
+              <Text style={styles.goalMessageText}>
+                ✨ Congratulations! ✨{'\n'}Goal is Achieved, MashaAllah 🌟
+              </Text>
+            </View>
+          )}
         </View>
 
         {/* Current Intention Card */}
@@ -403,7 +583,7 @@ const DemoScreen = ({ navigation }) => {
                   onPress={markAsRead}
                 >
                   <Text style={styles.markReadText}>
-                    Mark as Read (+20 Nurbits)
+                    Mark as Read (+10 Nurbits)
                   </Text>
                 </TouchableOpacity>
               )}
@@ -467,6 +647,14 @@ const DemoScreen = ({ navigation }) => {
             {/* UPDATED: Settings button */}
             <TouchableOpacity
               style={styles.settingsButton}
+              onPress={() => navigation.navigate('WeeklyProgressScreen')}
+            >
+              <Icon name="calendar-check" size={24} color="#fff" />
+              <Text style={styles.settingsButtonText}>Set Weekly Goal</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={styles.settingsButton}
               onPress={() => navigation.navigate('SettingsScreen')}
             >
               <Icon name="cog" size={24} color="#fff" />
@@ -486,11 +674,11 @@ const DemoScreen = ({ navigation }) => {
       )}
     </SafeAreaView>
   );
-};
+}
 
 const getStarGradientColor = n => {
   if (n < 100) return '#FF69B4';
-  if (n < 500) return '#9C27B0';
+  if (n < 500) return '#802191ff';
   return '#2196F3';
 };
 
@@ -537,6 +725,24 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     marginBottom: 30,
   },
+  goalMessageContainer: {
+    marginTop: 17,
+    padding: 10,
+    backgroundColor: '#FFF8E1',
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: '#FFD700',
+    alignItems: 'center',
+  },
+
+  goalMessageText: {
+    color: '#DAA520',
+    fontWeight: 'bold',
+    fontSize: 16,
+    textAlign: 'center',
+    lineHeight: 22,
+  },
+
   statCard: {
     backgroundColor: '#1e1e1e',
     borderRadius: 16,
@@ -557,7 +763,7 @@ const styles = StyleSheet.create({
   nurbitCount: { fontSize: 58, color: '#fff', marginTop: 86 },
   nurbitLabel: { fontSize: 14, color: '#aaa' },
   progressCard: {
-    height: 450,
+    height: 550,
     backgroundColor: '#1e1e1e',
     borderRadius: 20,
     padding: 20,
@@ -761,11 +967,13 @@ const styles = StyleSheet.create({
     borderRadius: 10,
     backgroundColor: '#2a2a2a',
     marginTop: 10,
+    marginBottom: 5,
   },
   settingsButtonText: {
     color: '#fff',
     fontSize: 18,
     marginLeft: 15,
+    markReadButton: 10,
   },
 
   // UPDATED: Logout button style
@@ -776,7 +984,7 @@ const styles = StyleSheet.create({
     paddingVertical: 15,
     borderTopWidth: 1,
     borderTopColor: '#333',
-    marginTop: 20,
+    marginTop: 300,
     borderRadius: 10,
     backgroundColor: '#2a2a2a',
   },
@@ -787,5 +995,3 @@ const styles = StyleSheet.create({
     fontWeight: 'bold',
   },
 });
-
-export default DemoScreen;

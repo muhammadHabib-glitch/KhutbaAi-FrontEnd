@@ -14,6 +14,7 @@ import DemoAnalysis from './DemoAnalysis';
 import AnalysisResults from './AnalysisResults';
 import SettingsScreen from './SettingsScreen';
 import ChangePasswordScreen from './ChangePassword';
+import WeeklyProgressScreen from './WeeklyProgressScreen';
 
 const ProjectNavigation = () => {
   const Stack = createNativeStackNavigator();
@@ -34,6 +35,10 @@ const ProjectNavigation = () => {
         <Stack.Screen name="DemoAnalysis" component={DemoAnalysis} />
         <Stack.Screen name="AnalysisResults" component={AnalysisResults} />
         <Stack.Screen name="SettingsScreen" component={SettingsScreen} />
+        <Stack.Screen
+          name="WeeklyProgressScreen"
+          component={WeeklyProgressScreen}
+        />
         <Stack.Screen
           name="ChangePasswordScreen"
           component={ChangePasswordScreen}

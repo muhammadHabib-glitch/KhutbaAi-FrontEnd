@@ -7,9 +7,13 @@ import {
   FlatList,
   StyleSheet,
   Modal,
+  ActivityIndicator,
+  RefreshControl,
+  ScrollView,
 } from 'react-native';
 import Icon from 'react-native-vector-icons/MaterialCommunityIcons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { format, parseISO } from 'date-fns';
 
 const KhutbahArchive = ({ navigation }) => {
   const [searchInput, setSearchInput] = useState('');
@@ -20,36 +24,29 @@ const KhutbahArchive = ({ navigation }) => {
   const [modalVisible, setModalVisible] = useState(false);
   const [userPlan, setUserPlan] = useState('');
   const [showFavorites, setShowFavorites] = useState(false);
+  const [khutbahs, setKhutbahs] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+  const [expandedKhutbahs, setExpandedKhutbahs] = useState({});
+  const [userId, setUserId] = useState('');
+  const [error, setError] = useState(null);
 
-  // Load user data on mount
-  useEffect(() => {
-    const loadUserData = async () => {
-      try {
-        const plan = await AsyncStorage.getItem('plan');
-        console.log('User plan:', plan); // For debugging
-        setUserPlan(plan || '');
-      } catch (error) {
-        console.error('Error loading user plan:', error);
-      }
-    };
-    loadUserData();
-  }, []);
-
-  // Sample data with key takeaways
   const categories = ['Brotherhood', 'Community', 'Daily Life', 'Spirituality'];
-  const khutbahs = [
+  const demoKhutbahs = [
     {
       id: '1',
       title: 'The Importance of Gratitude',
       date: 'Friday, March 15, 2024',
       description:
-        'Exploring the significance of being grateful in Islam and how it affects our daily lives. Understanding the deeper meaning of "Alhamdulillah" and its impact on our spiritual growth.',
+        'Exploring the significance of being grateful in Islam and how it affects our daily lives.',
       tags: ['Gratitude', 'Spirituality', 'Daily Life'],
       keyTakeaways: [
         'Gratitude increases our blessings',
         'Being thankful improves mental well-being',
         'Ways to practice gratitude daily',
       ],
+      transcript: 'Full transcript for The Importance of Gratitude...',
+      is_favorite: false,
     },
     {
       id: '2',
@@ -63,6 +60,8 @@ const KhutbahArchive = ({ navigation }) => {
         'How to strengthen community bonds',
         'Practical steps to build brotherhood',
       ],
+      transcript: 'Full transcript for Building Strong Communities...',
+      is_favorite: false,
     },
     {
       id: '3',
@@ -76,68 +75,327 @@ const KhutbahArchive = ({ navigation }) => {
         'Examples of patience from the Quran',
         'Practical ways to develop patience',
       ],
+      transcript: 'Full transcript for Patience in Adversity...',
+      is_favorite: false,
     },
   ];
 
-  // Filter khutbahs based on active filters, search, and favorites
+  useEffect(() => {
+    const loadUserData = async () => {
+      try {
+        const ip = await AsyncStorage.getItem('MyIpAddress');
+        console.log('IIIIIIIIIIPPPPPPPPPPPPPPPPP', ip);
+        const plan = await AsyncStorage.getItem('plan');
+        const id = await AsyncStorage.getItem('user_id');
+        console.log('USER IDDDDDDDDDDDDDDDDDDDD', id);
+        setUserPlan(plan || '');
+        setUserId(id || '');
+        if (!ip) {
+          console.error('No IP found in AsyncStorage');
+          setError('Server configuration missing');
+          setLoading(false);
+          return;
+        }
+
+        if (plan === 'premium') {
+          setLoading(true);
+          setError(null);
+
+          const response = await fetch(`${ip}/get-khutbahs?user_id=${id}`);
+
+          if (!response.ok) throw new Error(`Status ${response.status}`);
+
+          const data = await response.json();
+          console.log('DATAAAAA', data);
+          //          const formattedKhutbahs = data.khutbahs.map(k => ({
+          //   id: k.id,
+          //   title: k.summary
+          //     ? k.summary.split(' ').slice(0, 5).join(' ') + (k.summary.split(' ').length > 5 ? '...' : '')
+          //     : 'Untitled Khutbah', // Handle null summary
+          //   date: formatDate(k.created),
+          //   description: k.summary || '', // Handle null summary
+          //   tags: k.keywords?.slice(0, 3) || [],
+          //   keyTakeaways: k.tips
+          //     ? k.tips.split('\n').filter(p => p.trim() !== '')
+          //     : [],
+          //   transcript: k.transcript || '',
+          //   is_favorite: k.is_favorite || false,
+          // }));
+          const formattedKhutbahs = data.khutbahs.map(k => ({
+            id: k.id,
+            title: k.summary
+              ? k.summary.split(' ').slice(0, 5).join(' ') +
+                (k.summary.split(' ').length > 5 ? '...' : '')
+              : 'Untitled Khutbah', // Handle null summary
+            date: formatDate(k.created),
+            description: k.summary || '', // Handle null summary
+            tags: k.keywords?.slice(0, 3) || [],
+            keyTakeaways: k.tips
+              ? k.tips.split('\n').filter(p => p.trim() !== '')
+              : [],
+            transcript: k.transcript || '',
+            is_favorite: k.is_favorite || false,
+          }));
+
+          setKhutbahs(formattedKhutbahs);
+          const favs = formattedKhutbahs
+            .filter(k => k.is_favorite)
+            .map(k => k.id);
+          setFavorites(favs);
+        } else {
+          const demoData = [
+            {
+              id: '1',
+              title: 'The Importance of Gratitude',
+              date: 'Friday, March 15, 2024',
+              description:
+                'Exploring the significance of being grateful in Islam and how it affects our daily lives.',
+              tags: ['Gratitude', 'Spirituality', 'Daily Life'],
+              keyTakeaways: [
+                'Gratitude increases our blessings',
+                'Being thankful improves mental well-being',
+                'Ways to practice gratitude daily',
+              ],
+              transcript: 'Full transcript for The Importance of Gratitude...',
+              is_favorite: false,
+            },
+            {
+              id: '2',
+              title: 'Building Strong Communities',
+              date: 'Friday, March 8, 2024',
+              description:
+                'Understanding the foundations of Islamic brotherhood and the importance of community unity.',
+              tags: ['Community', 'Unity', 'Brotherhood'],
+              keyTakeaways: [
+                'The importance of unity in Islam',
+                'How to strengthen community bonds',
+                'Practical steps to build brotherhood',
+              ],
+              transcript: 'Full transcript for Building Strong Communities...',
+              is_favorite: false,
+            },
+            {
+              id: '3',
+              title: 'Patience in Adversity',
+              date: 'Friday, March 1, 2024',
+              description:
+                'Lessons on maintaining patience during difficult times from Islamic teachings.',
+              tags: ['Patience', 'Faith', 'Daily Life'],
+              keyTakeaways: [
+                'The rewards of patience in Islam',
+                'Examples of patience from the Quran',
+                'Practical ways to develop patience',
+              ],
+              transcript: 'Full transcript for Patience in Adversity...',
+              is_favorite: false,
+            },
+          ];
+
+          setKhutbahs(demoData);
+        }
+      } catch (error) {
+        console.error('Error loading khutbahs:', error);
+        setError('Failed to load user data');
+      } finally {
+        setLoading(false);
+        setRefreshing(false);
+      }
+    };
+
+    loadUserData();
+  }, []);
+
+  const refetchPremiumKhutbahs = async () => {
+    try {
+      const ip = await AsyncStorage.getItem('MyIpAddress');
+
+      const url = `${ip}/get-khutbahs?user_id=${userId}`;
+      setLoading(true);
+      setError(null);
+
+      const response = await fetch(url);
+      if (!response.ok) throw new Error(`Status ${response.status}`);
+
+      const data = await response.json();
+
+      const formattedKhutbahs = data.khutbahs.map(k => ({
+        id: k.id,
+        title: k.summary
+          ? k.summary.split(' ').slice(0, 5).join(' ') +
+            (k.summary.split(' ').length > 5 ? '...' : '')
+          : 'Untitled Khutbah',
+        date: formatDate(k.created),
+        description: k.summary,
+        tags: k.keywords?.slice(0, 3) || [],
+        keyTakeaways: k.tips
+          ? k.tips.split('\n').filter(p => p.trim() !== '')
+          : [],
+        transcript: k.transcript,
+        is_favorite: k.is_favorite || false,
+      }));
+
+      setKhutbahs(formattedKhutbahs);
+      const favs = formattedKhutbahs.filter(k => k.is_favorite).map(k => k.id);
+      setFavorites(favs);
+    } catch (err) {
+      console.error('❌ Refetch Error:', err.message);
+      setError('Failed to load khutbahs');
+    } finally {
+      setLoading(false);
+      setRefreshing(false);
+    }
+  };
+
+  const searchKhutbahs = async () => {
+    if (!searchInput.trim()) {
+      setAppliedSearch('');
+      if (userPlan === 'premium') {
+        await refetchPremiumKhutbahs();
+      }
+      return;
+    }
+
+    try {
+      setLoading(true);
+      setError(null);
+
+      const ip = await AsyncStorage.getItem('MyIpAddress');
+      const url = `${ip}/search-khutbahs?user_id=${userId}&query=${encodeURIComponent(
+        searchInput,
+      )}`;
+
+      const response = await fetch(url);
+      if (!response.ok) throw new Error(`Status ${response.status}`);
+
+      const data = await response.json();
+
+      const formattedResults = data.khutbahs.map(k => ({
+        id: k.id,
+        title:
+          k.summary.split(' ').slice(0, 5).join(' ') +
+          (k.summary.split(' ').length > 5 ? '...' : ''),
+        date: formatDate(k.created),
+        description: k.summary,
+        tags: k.tags || [],
+        keyTakeaways: [],
+        transcript: '',
+        is_favorite: k.is_favorite || false,
+      }));
+
+      setKhutbahs(formattedResults);
+      setAppliedSearch(searchInput);
+    } catch (err) {
+      console.error('❌ Search Error:', err.message);
+      setError('Search failed');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const toggleFavoritePremium = async id => {
+    try {
+      const ip = await AsyncStorage.getItem('MyIpAddress');
+      const url = `${ip}/khutbah/favorite`;
+
+      const response = await fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ user_id: userId, khutbah_id: id }),
+      });
+
+      if (!response.ok) throw new Error('Toggle failed');
+
+      const result = await response.json();
+
+      const updatedKhutbahs = khutbahs.map(k =>
+        k.id === id ? { ...k, is_favorite: result.is_favorite } : k,
+      );
+      setKhutbahs(updatedKhutbahs);
+
+      if (result.is_favorite) {
+        setFavorites([...favorites, id]);
+      } else {
+        setFavorites(favorites.filter(item => item !== id));
+      }
+    } catch (err) {
+      console.error('❌ Favorite Toggle Error:', err.message);
+      setError('Failed to update favorite');
+    }
+  };
+
+  const formatDate = dateString => {
+    try {
+      const date = parseISO(dateString);
+      return format(date, 'EEEE, MMMM d, yyyy');
+    } catch (e) {
+      return dateString;
+    }
+  };
+
+  const toggleExpand = id => {
+    setExpandedKhutbahs(prev => ({ ...prev, [id]: !prev[id] }));
+  };
+
   const getFilteredKhutbahs = () => {
-    return khutbahs.filter(khutbah => {
-      // Apply favorites filter if in favorites mode
-      if (showFavorites && !favorites.includes(khutbah.id)) return false;
-
-      // Apply search filter
-      if (appliedSearch) {
-        const searchLower = appliedSearch.toLowerCase();
-        const matchesSearch =
-          khutbah.title.toLowerCase().includes(searchLower) ||
-          khutbah.description.toLowerCase().includes(searchLower) ||
-          khutbah.tags.some(tag => tag.toLowerCase().includes(searchLower));
-
-        if (!matchesSearch) return false;
+    return khutbahs.filter(k => {
+      if (showFavorites && !favorites.includes(k.id)) return false;
+      if (userPlan === 'demo' && appliedSearch) {
+        const s = appliedSearch.toLowerCase();
+        const match =
+          k.title.toLowerCase().includes(s) ||
+          k.description.toLowerCase().includes(s) ||
+          (k.tags && k.tags.some(t => t.toLowerCase().includes(s)));
+        if (!match) return false;
       }
-
-      // Apply category filter
-      if (activeFilters.length > 0) {
-        const matchesCategory = khutbah.tags.some(tag =>
-          activeFilters.includes(tag),
-        );
-
-        if (!matchesCategory) return false;
+      if (userPlan === 'demo' && activeFilters.length > 0) {
+        const match = k.tags.some(tag => activeFilters.includes(tag));
+        if (!match) return false;
       }
-
       return true;
     });
   };
 
   const toggleFilter = filter => {
-    // Single selection behavior
     if (activeFilters.includes(filter)) {
-      setActiveFilters([]);
+      setActiveFilters(activeFilters.filter(f => f !== filter));
     } else {
-      setActiveFilters([filter]);
+      setActiveFilters([...activeFilters, filter]);
     }
   };
 
-  const toggleFavorite = id => {
-    if (favorites.includes(id)) {
-      setFavorites(favorites.filter(item => item !== id));
-    } else {
-      setFavorites([...favorites, id]);
+  const toggleFavorite = async id => {
+    if (userPlan === 'premium') await toggleFavoritePremium(id);
+    else {
+      const updated = khutbahs.map(k =>
+        k.id === id ? { ...k, is_favorite: !k.is_favorite } : k,
+      );
+      setKhutbahs(updated);
+      if (favorites.includes(id)) {
+        setFavorites(favorites.filter(i => i !== id));
+      } else {
+        setFavorites([...favorites, id]);
+      }
     }
-  };
-
-  const openKhutbahDetails = khutbah => {
-    setSelectedKhutbah(khutbah);
-    setModalVisible(true);
   };
 
   const handleSearch = () => {
-    setAppliedSearch(searchInput);
+    if (userPlan === 'premium') searchKhutbahs();
+    else setAppliedSearch(searchInput);
   };
 
   const clearSearch = () => {
     setSearchInput('');
     setAppliedSearch('');
+    if (userPlan === 'premium') refetchPremiumKhutbahs();
+  };
+
+  const onRefresh = () => {
+    setRefreshing(true);
+    if (userPlan === 'premium') refetchPremiumKhutbahs();
+    else {
+      setKhutbahs(demoKhutbahs);
+      setRefreshing(false);
+    }
   };
 
   const renderCategoryItem = ({ item }) => (
@@ -154,46 +412,116 @@ const KhutbahArchive = ({ navigation }) => {
       )}
     </TouchableOpacity>
   );
+  const renderKhutbahCard = ({ item }) => {
+    const isExpanded = expandedKhutbahs[item.id];
+    const isFavorite = favorites.includes(item.id);
 
-  const renderKhutbahCard = ({ item }) => (
-    <View style={styles.card}>
-      <View style={styles.cardHeader}>
-        <Text style={styles.cardTitle}>{item.title}</Text>
-        {/* FIXED: Always show star button for demo users */}
-        <TouchableOpacity onPress={() => toggleFavorite(item.id)}>
+    return (
+      <View style={styles.card}>
+        <View style={styles.cardHeader}>
+          <Text style={styles.cardTitle}>{item.title}</Text>
+          <TouchableOpacity onPress={() => toggleFavorite(item.id)}>
+            <Icon
+              name={isFavorite ? 'star' : 'star-outline'}
+              size={24}
+              color={isFavorite ? '#4CAF50' : '#888'}
+            />
+          </TouchableOpacity>
+        </View>
+
+        <View style={styles.dateContainer}>
+          <Icon name="calendar" size={16} color="#888" />
+          <Text style={styles.cardDate}>{item.date}</Text>
+        </View>
+
+        <Text style={styles.cardDescription}>{item.description}</Text>
+
+        {item.tags?.length > 0 && (
+          <View style={styles.tagsContainer}>
+            {item.tags.map((tag, index) => (
+              <Text key={index} style={styles.tag}>
+                {tag}
+              </Text>
+            ))}
+          </View>
+        )}
+
+        {isExpanded && item.keyTakeaways?.length > 0 && (
+          <>
+            <Text style={styles.keyTakeawaysTitle}>Key Takeaways</Text>
+            <View style={styles.keyTakeawaysContainer}>
+              {item.keyTakeaways.map((point, index) => (
+                <View key={index} style={styles.takeawayItem}>
+                  <Icon
+                    name="check-circle"
+                    size={16}
+                    color="#4CAF50"
+                    style={styles.bulletIcon}
+                  />
+                  <Text style={styles.takeawayText}>{point}</Text>
+                </View>
+              ))}
+            </View>
+          </>
+        )}
+
+        <TouchableOpacity
+          style={styles.readMoreButton}
+          onPress={() => toggleExpand(item.id)}
+        >
+          <Text style={styles.readMoreText}>
+            {isExpanded ? 'Show less' : 'Read more'}
+          </Text>
           <Icon
-            name={favorites.includes(item.id) ? 'star' : 'star-outline'}
-            size={24}
-            color={favorites.includes(item.id) ? '#4CAF50' : '#888'}
+            name={isExpanded ? 'chevron-up' : 'chevron-down'}
+            size={16}
+            color="#4CAF50"
           />
         </TouchableOpacity>
+
+        {isExpanded && (
+          <TouchableOpacity
+            style={styles.transcriptButton}
+            onPress={() => {
+              setSelectedKhutbah(item);
+              setModalVisible(true);
+            }}
+          >
+            <Text style={styles.transcriptButtonText}>
+              View Full Transcript
+            </Text>
+            <Icon name="text" size={16} color="#4CAF50" />
+          </TouchableOpacity>
+        )}
       </View>
-
-      <View style={styles.dateContainer}>
-        <Icon name="calendar" size={16} color="#888" />
-        <Text style={styles.cardDate}>{item.date}</Text>
+    );
+  };
+  if (loading) {
+    return (
+      <View style={styles.container}>
+        <ActivityIndicator size="large" color="#4CAF50" style={styles.loader} />
       </View>
+    );
+  }
 
-      <Text style={styles.cardDescription}>{item.description}</Text>
-
-      <View style={styles.tagsContainer}>
-        {item.tags.map((tag, index) => (
-          <Text key={index} style={styles.tag}>
-            {tag}
-          </Text>
-        ))}
+  if (error) {
+    return (
+      <View style={styles.container}>
+        <View style={styles.errorContainer}>
+          <Icon name="alert-circle" size={48} color="#FF6B6B" />
+          <Text style={styles.errorText}>{error}</Text>
+          <TouchableOpacity
+            style={styles.retryButton}
+            onPress={
+              userPlan === 'premium' ? refetchPremiumKhutbahs : onRefresh
+            }
+          >
+            <Text style={styles.retryButtonText}>Try Again</Text>
+          </TouchableOpacity>
+        </View>
       </View>
-
-      <TouchableOpacity
-        style={styles.readMoreButton}
-        onPress={() => openKhutbahDetails(item)}
-      >
-        <Text style={styles.readMoreText}>Read more</Text>
-        <Icon name="chevron-right" size={16} color="#4CAF50" />
-      </TouchableOpacity>
-    </View>
-  );
-
+    );
+  }
   return (
     <View style={styles.container}>
       {/* Header */}
@@ -204,17 +532,13 @@ const KhutbahArchive = ({ navigation }) => {
             Your collection of spiritual wisdom
           </Text>
         </View>
-
-        {/* Conditionally show favorites toggle for demo users */}
-        {userPlan === 'demo' && (
-          <TouchableOpacity onPress={() => setShowFavorites(!showFavorites)}>
-            <Icon
-              name={showFavorites ? 'star' : 'star-outline'}
-              size={34}
-              color="#4CAF50"
-            />
-          </TouchableOpacity>
-        )}
+        <TouchableOpacity onPress={() => setShowFavorites(!showFavorites)}>
+          <Icon
+            name={showFavorites ? 'star' : 'star-outline'}
+            size={34}
+            color="#4CAF50"
+          />
+        </TouchableOpacity>
       </View>
 
       {/* Search Bar */}
@@ -243,22 +567,24 @@ const KhutbahArchive = ({ navigation }) => {
         </TouchableOpacity>
       </View>
 
-      {/* Categories Horizontal Scroll */}
-      <View style={styles.categoriesContainer}>
-        <FlatList
-          horizontal
-          data={categories}
-          renderItem={renderCategoryItem}
-          keyExtractor={item => item}
-          showsHorizontalScrollIndicator={false}
-          contentContainerStyle={styles.categoriesList}
-        />
-      </View>
+      {/* Categories (demo users only) */}
+      {userPlan === 'demo' && (
+        <View style={styles.categoriesContainer}>
+          <FlatList
+            horizontal
+            data={categories}
+            renderItem={renderCategoryItem}
+            keyExtractor={item => item}
+            showsHorizontalScrollIndicator={false}
+            contentContainerStyle={styles.categoriesList}
+          />
+        </View>
+      )}
 
       {/* Divider */}
       <View style={styles.divider} />
 
-      {/* Khutbah Cards */}
+      {/* Khutbah Cards List */}
       <FlatList
         data={getFilteredKhutbahs()}
         renderItem={renderKhutbahCard}
@@ -271,8 +597,17 @@ const KhutbahArchive = ({ navigation }) => {
               : 'No khutbahs match your search'}
           </Text>
         }
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={onRefresh}
+            colors={['#4CAF50']}
+            tintColor="#4CAF50"
+          />
+        }
       />
 
+      {/* Bottom Tab Bar */}
       <View style={styles.tabBar}>
         <TouchableOpacity
           onPress={() => navigation.navigate('DemoScreen')}
@@ -297,7 +632,7 @@ const KhutbahArchive = ({ navigation }) => {
         </TouchableOpacity>
       </View>
 
-      {/* Key Takeaways Modal */}
+      {/* Transcript Modal */}
       <Modal
         animationType="slide"
         transparent={true}
@@ -320,32 +655,11 @@ const KhutbahArchive = ({ navigation }) => {
               <Text style={styles.modalDate}>{selectedKhutbah?.date}</Text>
             </View>
 
-            <Text style={styles.modalDescription}>
-              {selectedKhutbah?.description}
-            </Text>
-
-            <View style={styles.tagsContainer}>
-              {selectedKhutbah?.tags.map((tag, index) => (
-                <Text key={index} style={styles.tag}>
-                  {tag}
-                </Text>
-              ))}
-            </View>
-
-            <Text style={styles.keyTakeawaysTitle}>Key Takeaways</Text>
-            <View style={styles.keyTakeawaysContainer}>
-              {selectedKhutbah?.keyTakeaways.map((point, index) => (
-                <View key={index} style={styles.takeawayItem}>
-                  <Icon
-                    name="check-circle"
-                    size={16}
-                    color="#4CAF50"
-                    style={styles.bulletIcon}
-                  />
-                  <Text style={styles.takeawayText}>{point}</Text>
-                </View>
-              ))}
-            </View>
+            <ScrollView style={styles.modalScroll}>
+              <Text style={styles.modalDescription}>
+                {selectedKhutbah?.transcript}
+              </Text>
+            </ScrollView>
           </View>
         </View>
       </Modal>
@@ -503,14 +817,55 @@ const styles = StyleSheet.create({
     marginBottom: 8,
     fontSize: 12,
   },
+  keyTakeawaysTitle: {
+    fontSize: 16,
+    fontWeight: 'bold',
+    color: 'white',
+    marginTop: 10,
+    marginBottom: 10,
+  },
+  keyTakeawaysContainer: {
+    marginBottom: 15,
+  },
+  takeawayItem: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    marginBottom: 8,
+  },
+  bulletIcon: {
+    marginRight: 8,
+    marginTop: 2,
+  },
+  takeawayText: {
+    flex: 1,
+    fontSize: 14,
+    color: '#CCC',
+    lineHeight: 20,
+  },
   readMoreButton: {
     flexDirection: 'row',
     alignItems: 'center',
     alignSelf: 'flex-end',
+    marginTop: 5,
   },
   readMoreText: {
     color: '#4CAF50',
     marginRight: 5,
+    fontWeight: '500',
+  },
+  transcriptButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    alignSelf: 'flex-start',
+    marginTop: 15,
+    paddingVertical: 8,
+    paddingHorizontal: 15,
+    backgroundColor: '#333',
+    borderRadius: 8,
+  },
+  transcriptButtonText: {
+    color: '#4CAF50',
+    marginRight: 8,
     fontWeight: '500',
   },
   // Modal styles
@@ -524,6 +879,9 @@ const styles = StyleSheet.create({
     backgroundColor: '#1E1E1E',
     borderRadius: 12,
     padding: 20,
+    maxHeight: '80%',
+  },
+  modalScroll: {
     maxHeight: '80%',
   },
   closeButton: {
@@ -540,37 +898,12 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: '#888',
     marginLeft: 5,
+    marginBottom: 15,
   },
   modalDescription: {
     fontSize: 14,
     color: '#CCC',
-    marginBottom: 15,
-    lineHeight: 20,
-  },
-  keyTakeawaysTitle: {
-    fontSize: 16,
-    fontWeight: 'bold',
-    color: 'white',
-    marginTop: 20,
-    marginBottom: 10,
-  },
-  keyTakeawaysContainer: {
-    marginBottom: 10,
-  },
-  takeawayItem: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-    marginBottom: 8,
-  },
-  bulletIcon: {
-    marginRight: 8,
-    marginTop: 2,
-  },
-  takeawayText: {
-    flex: 1,
-    fontSize: 14,
-    color: '#CCC',
-    lineHeight: 20,
+    lineHeight: 22,
   },
   tabBar: {
     position: 'absolute',
@@ -595,6 +928,34 @@ const styles = StyleSheet.create({
     fontSize: 12,
     color: '#4CAF50',
     marginTop: 4,
+  },
+  loader: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  errorContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 20,
+  },
+  errorText: {
+    color: '#FF6B6B',
+    fontSize: 18,
+    textAlign: 'center',
+    marginVertical: 20,
+  },
+  retryButton: {
+    backgroundColor: '#4CAF50',
+    borderRadius: 8,
+    paddingVertical: 12,
+    paddingHorizontal: 30,
+  },
+  retryButtonText: {
+    color: 'white',
+    fontWeight: 'bold',
+    fontSize: 16,
   },
 });
 

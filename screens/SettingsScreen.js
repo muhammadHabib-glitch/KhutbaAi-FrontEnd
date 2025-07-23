@@ -23,12 +23,14 @@ export default function SettingsScreen({ navigation }) {
   const [email, setEmail] = useState('');
   const [profileImage, setProfileImage] = useState(null);
   const [menuVisible, setMenuVisible] = useState(false);
+  const SERVER_URL = 'http://192.168.18.97:5000'; // Replace with your Flask server IP
 
   useEffect(() => {
     (async () => {
       const storedName = await AsyncStorage.getItem('full_name');
       const storedEmail = await AsyncStorage.getItem('email');
-      const storedImage = await AsyncStorage.getItem('profileImage');
+      const storedImage = await AsyncStorage.getItem('imageUrl'); // ✅ Fixed here
+
       if (storedName) setName(storedName);
       if (storedEmail) setEmail(storedEmail);
       if (storedImage) setProfileImage(storedImage);
@@ -40,24 +42,60 @@ export default function SettingsScreen({ navigation }) {
 
   const handleOption = async option => {
     closeMenu();
+
+    const userId = await AsyncStorage.getItem('user_id');
+    if (!userId) {
+      console.error('User ID not found in AsyncStorage');
+      return;
+    }
+
+    let res;
+
     if (option === OPTION_CAMERA) {
-      const res = await launchCamera({
-        mediaType: 'photo',
-        saveToPhotos: true,
-      });
-      if (res.assets?.[0]?.uri) {
-        await AsyncStorage.setItem('profileImage', res.assets[0].uri);
-        setProfileImage(res.assets[0].uri);
-      }
+      res = await launchCamera({ mediaType: 'photo', saveToPhotos: true });
     } else if (option === OPTION_GALLERY) {
-      const res = await launchImageLibrary({ mediaType: 'photo' });
-      if (res.assets?.[0]?.uri) {
-        await AsyncStorage.setItem('profileImage', res.assets[0].uri);
-        setProfileImage(res.assets[0].uri);
-      }
-    } else {
+      res = await launchImageLibrary({ mediaType: 'photo' });
+    } else if (option === OPTION_AVATAR) {
       await AsyncStorage.removeItem('profileImage');
       setProfileImage(null);
+      return;
+    }
+
+    if (!res?.assets?.[0]?.uri) return;
+
+    const imageUri = res.assets[0].uri;
+    const fileName = imageUri.split('/').pop();
+    const fileType = res.assets[0].type || 'image/jpeg';
+
+    const formData = new FormData();
+    formData.append('user_id', userId); // UUID
+    formData.append('image', {
+      uri: imageUri,
+      name: fileName,
+      type: fileType,
+    });
+
+    try {
+      const uploadRes = await fetch(SERVER_URL + '/users/profile-image', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'multipart/form-data',
+        },
+        body: formData,
+      });
+
+      const json = await uploadRes.json();
+      console.log(json);
+
+      if (uploadRes.ok && json.imageUrl) {
+        const finalUrl = json.imageUrl + '?t=' + new Date().getTime(); // 🧠 bust cache
+        await AsyncStorage.setItem('imageUrl', finalUrl);
+        setProfileImage(finalUrl);
+      } else {
+        console.log('Upload failed:', json);
+      }
+    } catch (err) {
+      console.error('Upload error:', err);
     }
   };
 
@@ -73,9 +111,8 @@ export default function SettingsScreen({ navigation }) {
       blurRadius={2}
     >
       <View style={styles.overlay}>
-        {/* Header */}
         <View style={styles.header}>
-          <TouchableOpacity onPress={() => navigation.goBack()}>
+          <TouchableOpacity onPress={() => navigation.navigate('DemoScreen')}>
             <Icon name="arrow-left" size={28} color="#fff" />
           </TouchableOpacity>
           <Text style={styles.headerTitle}>Profile</Text>
@@ -87,7 +124,6 @@ export default function SettingsScreen({ navigation }) {
         </View>
         <Text style={styles.subtitle}>Welcome to your Profile</Text>
 
-        {/* Profile Card */}
         <View style={styles.card}>
           <TouchableOpacity onPress={openMenu} style={styles.avatarWrapper}>
             {profileImage ? (
@@ -105,7 +141,6 @@ export default function SettingsScreen({ navigation }) {
           <Text style={styles.email}>{email || 'abdullah@example.com'}</Text>
         </View>
 
-        {/* Change Password */}
         <TouchableOpacity
           style={styles.changeBtn}
           onPress={handleChangePassword}
@@ -114,7 +149,6 @@ export default function SettingsScreen({ navigation }) {
           <Text style={styles.changeText}>Change Password</Text>
         </TouchableOpacity>
 
-        {/* Upload Modal */}
         <Modal
           transparent
           visible={menuVisible}
