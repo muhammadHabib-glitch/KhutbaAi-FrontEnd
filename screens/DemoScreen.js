@@ -396,6 +396,8 @@ export default function DemoScreen({ navigation }) {
       setNurbitCount(data.nurbits);
       setReflectionsCount(data.total_reflection); // ✅ Correct way
 
+      console.log('🌟 Updated Nurbits:', data.nurbits);
+
       console.log('🎯 Progress:', data.weekly_progress, '/', data.goal);
 
       const prevNurbit = prevNurbitRef.current;
